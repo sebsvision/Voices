@@ -2195,7 +2195,7 @@ class VoxCPM2Backend(TTSBackend):
     max_ref_seconds = _VOXCPM_REF_MAX_S
     ref_strategy = "head"
     applies_own_mastering = True  # Native studio-grade 48 kHz needs no apply_mastering().
-    gpu_compat = ("cuda", "mps", "cpu")
+    gpu_compat = ("cuda", "rocm", "mps", "cpu")
 
     def __init__(self):
         self._model = None
@@ -2338,7 +2338,7 @@ class MossTTSNanoBackend(TTSBackend):
     id = "moss-tts-nano"
     display_name = "MOSS-TTS-Nano (20 langs, CPU realtime, 48 kHz)"
     supports_voice_design = False  # strictly reference-cloning
-    gpu_compat = ("cuda", "cpu")
+    gpu_compat = ("cuda", "rocm", "cpu")
 
     def __init__(self):
         self._model = None
@@ -3271,7 +3271,7 @@ class CosyVoiceBackend(TTSBackend):
     inline_tags = COSYVOICE_INLINE_TAGS
     # CosyVoice's official inference path expects CUDA; CPU works but slow.
     # MPS support not verified upstream — flagged for Phase 6 confirmation.
-    gpu_compat = ("cuda", "cpu")
+    gpu_compat = ("cuda", "rocm", "cpu")
 
     # CosyVoice language tags used for cross-lingual synthesis.
     LANG_TAGS = {
@@ -3464,8 +3464,9 @@ class GPTSoVITSBackend(TTSBackend):
     id = "gpt-sovits"
     display_name = "GPT-SoVITS (5 langs, zero-shot, RTF 0.014, MIT)"
     supports_voice_design = False  # api_v2 needs a reference clip for every request
-    # Server-side; whichever device GPT-SoVITS itself uses (CUDA preferred).
-    gpu_compat = ("cuda", "cpu")
+    # Server-side; whichever device GPT-SoVITS itself uses (CUDA preferred;
+    # a server running a ROCm/HIP torch uses an AMD GPU the same way).
+    gpu_compat = ("cuda", "rocm", "cpu")
 
     def __init__(self):
         self._url = os.environ.get("OMNIVOICE_GPTSOVITS_URL", "http://127.0.0.1:9880")

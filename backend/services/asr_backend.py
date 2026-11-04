@@ -1469,9 +1469,10 @@ class MLXWhisperBackend(ASRBackend):
 class PyTorchWhisperBackend(ASRBackend):
     id = "pytorch-whisper"
     display_name = "PyTorch Whisper (CUDA / CPU via transformers pipeline)"
-    # Pure transformers pipeline → runs wherever torch does (CUDA, MPS, CPU).
-    # ROCm-via-HIP would also work but is left unclaimed pending verification.
-    gpu_compat = ("cuda", "mps", "cpu")
+    # Pure transformers pipeline → runs wherever torch does. A ROCm (HIP)
+    # torch answers torch.cuda, so get_best_device() hands it the AMD GPU;
+    # _auto_detect already prefers this engine on ROCm hosts.
+    gpu_compat = ("cuda", "rocm", "mps", "cpu")
 
     def __init__(self, asr_pipe=None):
         # Reuses the `_asr_pipe` attached to the TTS model when available.
@@ -1754,7 +1755,9 @@ class NeMoASRBackend(ASRBackend):
     int8 on the same host, so the old hard CUDA gate was a false claim.
     """
     id = "nemo-parakeet"
-    gpu_compat = ("cuda", "cpu")
+    # NeMo restores onto torch.cuda when it is available, which a ROCm (HIP)
+    # torch satisfies with the AMD GPU.
+    gpu_compat = ("cuda", "rocm", "cpu")
     display_name = "Parakeet TDT (NVIDIA NeMo — 25 langs, CUDA/CPU)"
 
     def __init__(self):
@@ -2302,7 +2305,9 @@ class FunASRBackend(ASRBackend):
     #182); WhisperX remains the cross-platform default.
     """
     id = "funasr"
-    gpu_compat = ("cuda", "cpu")  # FunASR: CUDA or CPU
+    # FunASR's AutoModel defaults to torch.cuda when available — CUDA, or an
+    # AMD GPU through a ROCm (HIP) torch — else CPU.
+    gpu_compat = ("cuda", "rocm", "cpu")
     display_name = "FunASR (SenseVoice — 50+ languages, all-in-one)"
 
     def __init__(self):

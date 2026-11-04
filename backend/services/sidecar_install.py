@@ -170,6 +170,12 @@ class SidecarSpec:
     # fails loudly at install time. False keeps the engine's existing host
     # behaviour (see _rocm_pin_args, #2371).
     uses_rocm_index: bool = False
+    # The exact torch (and torchaudio) version an upstream pins itself, for an
+    # engine without ``torch_pins``. On a ROCm host it selects the matching
+    # build from PyTorch's ROCm index (core.torch_indexes
+    # ROCM_INDEX_TAIL_FOR_TORCH), so the sidecar can drive an AMD GPU while
+    # keeping the version upstream tested.
+    upstream_torch: str = ""
     # torch/torchaudio pins for an upstream that leaves torch unpinned. Left
     # to the resolver, PyPI's newest torch (CPU-only on Windows) pairs with a
     # CUDA torchaudio from the other index. The host picks the build of the
@@ -334,6 +340,72 @@ def _rocm_pin_args() -> list[str]:
         for arg in UV_PIP_ROCM_ARGS
     ]
     return ["--no-sources", *(f"{pin}{tag}" for pin in ROCM_TORCH_PINS), *idx_args]
+
+
+def _spec_torch_versions(spec: "SidecarSpec") -> tuple[str, str] | None:
+    """The exact (torch, torchaudio) versions this engine installs, if known.
+
+    From the spec's own pins, its declared upstream pin, or (dots.tts) the
+    ``torch==`` line of the upstream constraints file in the checkout.
+    """
+    pins = dict(
+        pin.split("==", 1) for pin in spec.torch_pins
+        if pin.startswith(("torch==", "torchaudio=="))
+    )
+    if "torch" in pins:
+        return pins["torch"], pins.get("torchaudio", pins["torch"])
+    if spec.upstream_torch:
+        return spec.upstream_torch, spec.upstream_torch
+    if spec.engine_id == "dots-tts":
+        constraints = managed_checkout(spec) / "constraints" / "recommended.txt"
+        try:
+            text = constraints.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+        found = dict(re.findall(
+            r"(?m)^(torch|torchaudio)\s*==\s*([0-9][0-9.]*)\s*(?:#.*)?$", text,
+        ))
+        if "torch" in found:
+            return found["torch"], found.get("torchaudio", found["torch"])
+    return None
+
+
+def _spec_rocm_torch_args(spec: "SidecarSpec") -> Optional[list[str]]:
+    """uv arguments that give this sidecar a ROCm torch, or None.
+
+    Only on a ROCm host (``_rocm_index_url``). IndexTTS keeps the shared stack
+    (``uses_rocm_index``); every other engine whose torch version is known
+    takes that exact version from the ROCm index that publishes it, so an AMD
+    GPU is used instead of the CPU-only or CUDA wheel. A custom
+    ``OMNIVOICE_TORCH_INDEX`` ending in ``rocmX.Y`` has that segment swapped
+    for the one the version needs; any other custom index is used as given
+    with untagged pins.
+    """
+    index = _rocm_index_url()
+    if index is None:
+        return None
+    if spec.uses_rocm_index:
+        return _rocm_pin_args()
+    versions = _spec_torch_versions(spec)
+    if versions is None:
+        return None
+    from core.torch_indexes import (
+        PYTORCH_ROCM_INDEX_URL,
+        ROCM_INDEX_TAIL_FOR_TORCH,
+        UV_PIP_ROCM_ARGS,
+    )
+
+    torch_v, audio_v = versions
+    tail = ROCM_INDEX_TAIL_FOR_TORCH.get(".".join(torch_v.split(".")[:2]))
+    if tail is None:
+        return None
+    head, _, last = index.rstrip("/").rpartition("/")
+    if last.startswith("rocm"):
+        index, tag = f"{head}/{tail}", f"+{tail}"
+    else:
+        tag = ""
+    idx_args = [index if arg == PYTORCH_ROCM_INDEX_URL else arg for arg in UV_PIP_ROCM_ARGS]
+    return ["--no-sources", f"torch=={torch_v}{tag}", f"torchaudio=={audio_v}{tag}", *idx_args]
 
 
 def venv_torch_hip(venv_dir: Path) -> Optional[bool]:
@@ -513,8 +585,10 @@ SPECS: dict[str, SidecarSpec] = {
         venv_args=("--python", "3.10"),
         install_args=("-r", "{checkout}/requirements.txt"),
         # torch==2.7.0: CPU-only from PyPI on Windows; the CUDA index supplies
-        # 2.7.0+cu128, which satisfies the same pin.
+        # 2.7.0+cu128, which satisfies the same pin. A ROCm host takes
+        # 2.7.0+rocm6.3 instead (upstream_torch).
         uses_cuda_index=True,
+        upstream_torch="2.7.0",
         docs_path="docs/engines/confucius4-tts.md",
         # ~7 GB venv now, ~5 GB of weights on first synthesis.
         required_bytes=14 * _GIB,
@@ -647,6 +721,8 @@ SPECS: dict[str, SidecarSpec] = {
         install_args=("-e", "{checkout}", "soundfile"),
         install_revision="audio-backend-v1",
         uses_cuda_index=True,
+        # Upstream pins torch/torchaudio==2.7.0; a ROCm host takes +rocm6.3.
+        upstream_torch="2.7.0",
         # torch 2.7 (CUDA build on NVIDIA hosts) + transformers + onnxruntime.
         # The model and its audio tokenizer download on first synthesis.
         required_bytes=8 * _GIB,
@@ -705,7 +781,7 @@ SPECS: dict[str, SidecarSpec] = {
         ),
         venv_args=("--python", "3.10"),
         install_args=("-r", _COSYVOICE_REQUIREMENTS, "{checkout}/third_party/PyWorld"),
-        install_revision="security-floors-v4",
+        install_revision="rocm-routing-v5",
         torch_pins=("torch==2.7.0", "torchaudio==2.7.0"),
         weights_repo_id="FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
         weights_revision="29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
@@ -1238,9 +1314,13 @@ def _healthy(spec: SidecarSpec) -> bool:
         # where it applies (the deps step is idempotent: venv and weights
         # stay, torch is swapped). User-managed clones keep their own
         # layout; every other host keeps "installed means installed".
-        if spec.uses_rocm_index and _rocm_index_url() is not None:
+        if _spec_rocm_torch_args(spec) is not None:
             return _venv_torch_is_rocm(checkout / ".venv")
         return True
+    # Same repair for marker-based engines that now take a ROCm torch on this
+    # host: a venv provisioned before still carries the CUDA/CPU wheel.
+    if _spec_rocm_torch_args(spec) is not None and not _venv_torch_is_rocm(checkout / ".venv"):
+        return False
     return _install_marker_valid(spec, checkout)
 
 
@@ -1250,9 +1330,13 @@ def _install_marker_valid(spec: SidecarSpec, checkout: Path) -> bool:
     if not spec.install_revision:
         return marker.is_file()
     try:
-        return marker.read_text(encoding="utf-8").splitlines() == [
-            spec.probe_module, spec.install_revision,
-        ]
+        lines = marker.read_text(encoding="utf-8").splitlines()
+        accepted = {spec.install_revision}
+        # v5 changes only requirements comments and external Torch selection.
+        # Keep working v4 installs; _healthy separately enforces HIP on AMD.
+        if spec.engine_id == "cosyvoice" and spec.install_revision == "rocm-routing-v5":
+            accepted.add("security-floors-v4")
+        return len(lines) == 2 and lines[0] == spec.probe_module and lines[1] in accepted
     except (OSError, UnicodeError):
         return False
 
@@ -1710,8 +1794,9 @@ def _step_install_deps(spec: SidecarSpec, job: dict) -> None:
         from engines.dots_tts.install import compatible_constraints
         constraint = compatible_constraints(checkout / "constraints" / "recommended.txt")
         target[target.index("-c") + 1] = constraint.resolve().as_uri()
-    if _rocm_index_url() and spec.uses_rocm_index:
-        target += _rocm_pin_args()
+    rocm_args = _spec_rocm_torch_args(spec)
+    if rocm_args is not None:
+        target += rocm_args
     elif spec.torch_pins:
         target += _torch_pin_args(spec)
     elif spec.cpu_torch_index:
