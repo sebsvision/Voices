@@ -4,6 +4,8 @@ import os
 
 import pytest
 
+from test_docker_registry_owner import resolved_env
+
 yaml = pytest.importorskip("yaml")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -17,8 +19,8 @@ def _env():
         return yaml.safe_load(fh)["env"]
 
 
-def test_the_ghcr_paths_are_explicit_and_keep_the_legacy_alias():
-    env = _env()
+def test_the_ghcr_paths_are_explicit_and_keep_the_legacy_alias(tmp_path):
+    env = resolved_env(tmp_path, "debpalash")
     assert env["IMAGE_NAME"] == "debpalash/voicestudio"
     assert env["LEGACY_IMAGE_NAME"] == "debpalash/omnivoice-studio"
     assert "github.repository" not in str(env)
@@ -49,7 +51,10 @@ def test_current_release_tags_are_backfilled_for_every_gpu_flavor():
 
 def test_sha_tags_follow_the_checked_out_source_commit():
     text = open(WORKFLOW, encoding="utf-8").read()
-    assert text.count("git rev-parse --short=7 HEAD") == FLAVORS
+    workflow = yaml.safe_load(text)
+    resolvers = [step for job in workflow["jobs"].values() for step in job["steps"] if step.get("id") == "source"]
+    assert len(resolvers) == FLAVORS
+    assert all("git rev-parse --short=7 HEAD" in step["run"] for step in resolvers)
     assert "type=sha" not in text
     assert "GITHUB_SHA::7" not in text
 
@@ -70,9 +75,9 @@ def test_active_templates_use_the_canonical_public_path():
         assert canonical in text, f"{rel} does not use the canonical GHCR path"
 
 
-def test_the_docs_name_the_path_that_is_actually_published():
+def test_the_docs_name_the_path_that_is_actually_published(tmp_path):
     """Docs drift here is invisible: a wrong pull command fails only for users."""
-    env = _env()
+    env = resolved_env(tmp_path, "debpalash")
     published = f"ghcr.io/{env['IMAGE_NAME']}"
     legacy = f"ghcr.io/{env['LEGACY_IMAGE_NAME']}"
     for rel in ("docs/install/docker.md", "deploy/dockerhub-overview.md"):
