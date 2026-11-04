@@ -120,7 +120,8 @@ inference are reported as different scopes.
 | Faster-whisper, including the crash-isolated worker | GPU is admitted only for the pinned HIP binary plus bounded local verification; CPU overrides remain effective. Auto selection can prefer this verified basic-ASR path. |
 | WhisperX, pyannote speaker detection, wav2vec2 GPU alignment | GPU execution is gated before imports/cached pipelines: MIOpen Unicode-path and SDK-header compatibility is unverified. Choose CPU in Settings → Performance (`OMNIVOICE_DEVICE=cpu`) to use these pipelines. |
 | Unavailable forced alignment | Keeps the transcript and native word timestamps; alignment precision can be lower. It does not discard requested speech or translation content. |
-| Optional engine sidecars | Separate environments and compatibility. Main readiness never certifies them. |
+| PyTorch engines in the main environment (PyTorch Whisper, FunASR, NeMo Parakeet, and in-process VoxCPM2, MOSS-TTS-Nano and CosyVoice) | Claim ROCm: the HIP torch answers `torch.cuda` with the AMD GPU, so they run there instead of the CPU. Conv-heavy models (FunASR's VAD and speaker model, NeMo's FastConformer) go through MIOpen and still need real hardware testing on Windows; choose CPU in Settings → Performance if one fails. |
+| Optional engine sidecars | Separate environments and compatibility. Main readiness never certifies them. A sidecar shows GPU routing only when its own venv carries a HIP torch; with the CUDA or CPU wheel its badge says CPU. |
 
 IndexTTS keeps its Python 3.10/3.11 requirement; CosyVoice keeps Torch 2.7;
 VoxCPM2 keeps Torch 2.11. The cp312/Torch 2.9 recipe is **not** applied to these

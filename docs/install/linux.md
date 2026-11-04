@@ -392,8 +392,22 @@ Notes:
   work, so RDNA4 (gfx12xx) cards need a ROCm build that lists them instead.
   When the build lacks your card, VoiceStudio's GPU architecture notification
   names the exact value to try, or says that no remap exists.
-- ZLUDA (CUDA-on-ROCm translation) can work but is unsupported here — prefer a
-  native ROCm wheel.
+- Engines on the GPU: every PyTorch engine that runs on an NVIDIA GPU also
+  claims ROCm (OmniVoice, IndexTTS, VoxCPM2, MOSS-TTS-Nano, CosyVoice,
+  dots.tts, Confucius4, PyTorch Whisper, FunASR, NeMo Parakeet). On a ROCm
+  host the one-click installs of VoxCPM2, MOSS-TTS-Nano, CosyVoice,
+  Confucius4, dots.tts and IndexTTS put the ROCm build of the engine's own
+  pinned torch in its venv, from the PyTorch ROCm index that publishes that
+  version (2.7 → `rocm6.3`, 2.8 → `rocm6.4`, 2.11 → `rocm7.2`). An install
+  made before this still has the CUDA/CPU wheel: its engine badge says CPU
+  and Model Catalogue offers the repair, which swaps only torch. Vulkan
+  engines (OmniVoice GGUF, CosyVoice GGUF, whisper.cpp) need no ROCm at all.
+  Faster-Whisper and WhisperX use CTranslate2, whose stock build is
+  NVIDIA-only, so on Linux ROCm they stay on the CPU; use PyTorch Whisper,
+  which auto-detection already prefers on ROCm.
+- ZLUDA (CUDA-on-ROCm translation) is not used or supported: its PyTorch
+  support is incomplete and its cuDNN path can be slower than the CPU. Use
+  the native ROCm builds above.
 
 Tracking issue: [#124](https://github.com/debpalash/VoiceStudio/issues/124).
 
@@ -404,3 +418,14 @@ See [docs/setup/huggingface-token.md](../setup/huggingface-token.md).
 ## Troubleshooting
 
 Hit a wall? See [docs/install/troubleshooting.md](troubleshooting.md).
+
+### Proposed Linux ROCm sidecar provisioning exception (#3787)
+
+This PR proposes user-started Linux sidecar dependency installation from
+`https://download.pytorch.org/whl/rocm6.3`, `rocm6.4`, `rocm7.1` and `rocm7.2`,
+using the engine-specific Torch/torchaudio pins in the installer. A user-selected
+`OMNIVOICE_TORCH_INDEX` mirror retains the existing override contract. Inventory
+and readiness add no downloads; only the explicit install/repair action can
+provision packages. These sidecar pins are separate from the app's `uv.lock`.
+Explicit upstream maintainer acceptance of this exception is required before
+merge; local integration tests do not establish approval.
