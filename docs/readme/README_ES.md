@@ -114,6 +114,8 @@ Comience con **VoiceStudio** (predeterminado, impulsado por k2-fsa/ OmniVoice), 
 
 Elija su sistema, luego expanda un método de instalación.
 
+Los motores GGUF nativos también admiten aceleración Vulkan específica de cada motor en GPU AMD, Intel y NVIDIA ([OmniVoice](../../docs/engines/omnivoice-gguf.md#vulkan-acceleration), [CosyVoice](../../docs/engines/cosyvoice-gguf.md)). OmniVoice GGUF selecciona automáticamente la GPU y el tamaño del modelo en Windows y Linux. Si una comprobación oculta se bloquea, la detección de Vulkan vuelve a intentarlo con un resumen nativo; las compilaciones de escritorio de Windows y Linux fallan en lugar de distribuirse silenciosamente sin su módulo Vulkan.
+
 <a id="install-macos"></a>
 
 <details>
