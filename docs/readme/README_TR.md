@@ -114,6 +114,8 @@ Motorlarınızı seçin ve yalnızca ihtiyacınız olan modelleri indirin.
 
 Sisteminizi seçin, ardından kurulum yöntemini genişletin.
 
+Yerel GGUF motorları AMD, Intel ve NVIDIA GPU’larda motora özgü Vulkan hızlandırmasını da destekler ([OmniVoice](../../docs/engines/omnivoice-gguf.md#vulkan-acceleration), [CosyVoice](../../docs/engines/cosyvoice-gguf.md)). OmniVoice GGUF, Windows ve Linux üzerinde GPU’yu ve model boyutunu otomatik seçer. Gizli bir denetim takılırsa Vulkan algılama yerel bir özetle yeniden dener; Windows ve Linux masaüstü derlemeleri Vulkan modülü olmadan sessizce dağıtılmak yerine başarısız olur.
+
 <a id="install-macos"></a>
 
 <details>
